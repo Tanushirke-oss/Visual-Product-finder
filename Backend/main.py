@@ -39,17 +39,25 @@ app.mount(
 def load_products():
     loaded_products = []
 
-    with open(CSV_PATH, "r", newline="", encoding="utf-8") as file:
+    with open(CSV_PATH, "r", newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
         required_columns = {"id", "name", "category", "price", "image"}
 
-        if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
+        if not reader.fieldnames or not required_columns.issubset(
+            {column.strip() for column in reader.fieldnames}
+        ):
             raise ValueError(
                 "products.csv must contain id, name, category, price, image"
             )
 
         for row in reader:
-            image_name = row["image"].strip()
+            row = {
+                key.strip(): value.strip() if value else ""
+                for key, value in row.items()
+                if key is not None
+            }
+
+            image_name = row["image"]
 
             if not image_name or Path(image_name).name != image_name:
                 raise ValueError(f"Invalid image filename: {image_name}")
@@ -125,7 +133,8 @@ def get_products():
 @app.post("/find-similar")
 async def find_similar(
     file: UploadFile = File(...),
-    top_k: int = Query(default=5, ge=1, le=20)
+    top_k: int = Query(default=5, ge=1, le=20),
+    category: str = Query(default="All")
 ):
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(
@@ -150,21 +159,40 @@ async def find_similar(
             detail="Could not decode the uploaded image."
         )
 
-    query_features = extract_features(query_image).reshape(1, -1)
-    count = min(top_k, len(products))
+    candidates = products
 
-    distances, indices = model.kneighbors(
-        query_features,
-        n_neighbors=count
-    )
+    if category.lower() != "all":
+        candidates = [
+            product for product in products
+            if product["category"].lower() == category.lower()
+        ]
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail="No products found in this category."
+        )
+
+    query_features = extract_features(query_image)
+
+    distances = [
+        float(np.linalg.norm(product["features"] - query_features))
+        for product in candidates
+    ]
+
+    ranked = sorted(
+        zip(candidates, distances),
+        key=lambda item: item[1]
+    )[:min(top_k, len(candidates))]
 
     matches = [
-        format_product(products[int(index)], distance)
-        for index, distance in zip(indices[0], distances[0])
+        format_product(product, distance)
+        for product, distance in ranked
     ]
 
     return {
         "query_filename": file.filename,
         "matches": matches,
+        "category_filter": category,
         "distance_note": "Lower distance indicates closer color histogram features."
     }
