@@ -4,7 +4,13 @@
     "backend": {
       "root": "Backend",
       "entrypoint": "main:app",
-      "framework": "fastapi"
+      "framework": "fastapi",
+      "rewrites": [
+        {
+          "source": "/api/:path(.*)?",
+          "destination": "/:path"
+        }
+      ]
     },
     "frontend": {
       "root": "Frontend",
