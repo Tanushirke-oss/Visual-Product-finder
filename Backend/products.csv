@@ -1,12 +1,12 @@
 id,name,category,price,image
-1.Backend\images\black tshirt.jpg
-2.Backend\images\Black-Canvas-Bag-.webp
-3.Backend\images\Canvas-Red-Bag.webp
-4.Backend\images\dark blue tshirt.webp
-5.Backend\images\green tshirt.jpg
-6.Backend\images\jute bag.jpg
-7.Backend\images\light blue tshirt.webp
-8.Backend\images\orange bag.jpg
-9.Backend\images\red tshirt.webp
-10.Backend\images\white bag.webp
-11.Backend\images\white tshirt.jpg
+1,Black T-Shirt,Clothing,599,black tshirt.jpg
+2,Black Canvas Bag,Bags,899,Black-Canvas-Bag-.webp
+3,Red Canvas Bag,Bags,799,Canvas-Red-Bag.webp
+4,Dark Blue T-Shirt,Clothing,599,dark blue tshirt.webp
+5,Green T-Shirt,Clothing,549,green tshirt.jpg
+6,Jute Bag,Bags,499,jute bag.jpg
+7,Light Blue T-Shirt,Clothing,599,light blue tshirt.webp
+8,Orange Bag,Bags,699,orange bag.jpg
+9,Red T-Shirt,Clothing,549,red tshirt.webp
+10,White Bag,Bags,799,white bag.webp
+11,White T-Shirt,Clothing,499,white tshirt.jpg

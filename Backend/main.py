@@ -8,7 +8,6 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sklearn.neighbors import NearestNeighbors
 
 from image_features import extract_features
 
@@ -21,7 +20,7 @@ app = FastAPI(title="Visual Product Finder API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,7 +31,7 @@ IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 app.mount(
     "/images",
     StaticFiles(directory=str(IMAGE_DIR)),
-    name="images"
+    name="images",
 )
 
 
@@ -41,11 +40,14 @@ def load_products():
 
     with open(CSV_PATH, "r", newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
+
+        if not reader.fieldnames:
+            raise ValueError("products.csv is empty.")
+
+        reader.fieldnames = [name.strip() for name in reader.fieldnames]
         required_columns = {"id", "name", "category", "price", "image"}
 
-        if not reader.fieldnames or not required_columns.issubset(
-            {column.strip() for column in reader.fieldnames}
-        ):
+        if not required_columns.issubset(reader.fieldnames):
             raise ValueError(
                 "products.csv must contain id, name, category, price, image"
             )
@@ -63,9 +65,9 @@ def load_products():
                 raise ValueError(f"Invalid image filename: {image_name}")
 
             image_path = IMAGE_DIR / image_name
-            img = cv.imread(str(image_path))
+            image = cv.imread(str(image_path))
 
-            if img is None:
+            if image is None:
                 raise ValueError(f"Could not load catalog image: {image_path}")
 
             loaded_products.append({
@@ -74,28 +76,16 @@ def load_products():
                 "category": row["category"],
                 "price": float(row["price"]),
                 "image": image_name,
-                "features": extract_features(img)
+                "features": extract_features(image),
             })
 
     if not loaded_products:
-        raise ValueError("Add at least one product to products.csv")
+        raise ValueError("Add at least one product to products.csv.")
 
     return loaded_products
 
 
 products = load_products()
-
-X = np.array(
-    [product["features"] for product in products],
-    dtype=np.float32
-)
-
-model = NearestNeighbors(
-    metric="euclidean",
-    algorithm="brute"
-)
-
-model.fit(X)
 
 
 def format_product(product, distance=None):
@@ -104,7 +94,7 @@ def format_product(product, distance=None):
         "name": product["name"],
         "category": product["category"],
         "price": product["price"],
-        "image_url": f"/images/{product['image']}"
+        "image_url": f"/images/{product['image']}",
     }
 
     if distance is not None:
@@ -117,16 +107,14 @@ def format_product(product, distance=None):
 def home():
     return {
         "message": "Visual Product Finder API is running",
-        "products_loaded": len(products)
+        "products_loaded": len(products),
     }
 
 
 @app.get("/products")
 def get_products():
     return {
-        "products": [
-            format_product(product) for product in products
-        ]
+        "products": [format_product(product) for product in products]
     }
 
 
@@ -134,12 +122,12 @@ def get_products():
 async def find_similar(
     file: UploadFile = File(...),
     top_k: int = Query(default=5, ge=1, le=20),
-    category: str = Query(default="All")
+    category: str = Query(default="All"),
 ):
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400,
-            detail="Please upload an image file."
+            detail="Please upload an image file.",
         )
 
     image_bytes = await file.read()
@@ -147,7 +135,7 @@ async def find_similar(
     if not image_bytes:
         raise HTTPException(
             status_code=400,
-            detail="The uploaded file is empty."
+            detail="The uploaded file is empty.",
         )
 
     image_array = np.frombuffer(image_bytes, dtype=np.uint8)
@@ -156,7 +144,7 @@ async def find_similar(
     if query_image is None:
         raise HTTPException(
             status_code=400,
-            detail="Could not decode the uploaded image."
+            detail="Could not decode the uploaded image.",
         )
 
     candidates = products
@@ -170,29 +158,28 @@ async def find_similar(
     if not candidates:
         raise HTTPException(
             status_code=404,
-            detail="No products found in this category."
+            detail=f"No products found in category '{category}'.",
         )
 
     query_features = extract_features(query_image)
 
-    distances = [
-        float(np.linalg.norm(product["features"] - query_features))
-        for product in candidates
-    ]
-
     ranked = sorted(
-        zip(candidates, distances),
-        key=lambda item: item[1]
+        (
+            (
+                product,
+                float(np.linalg.norm(product["features"] - query_features)),
+            )
+            for product in candidates
+        ),
+        key=lambda item: item[1],
     )[:min(top_k, len(candidates))]
-
-    matches = [
-        format_product(product, distance)
-        for product, distance in ranked
-    ]
 
     return {
         "query_filename": file.filename,
-        "matches": matches,
+        "matches": [
+            format_product(product, distance)
+            for product, distance in ranked
+        ],
         "category_filter": category,
-        "distance_note": "Lower distance indicates closer color histogram features."
+        "distance_note": "Lower distance means closer color and spatial histogram features.",
     }
